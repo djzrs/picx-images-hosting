@@ -1,0 +1,641 @@
+module main
+author unknown
+version 1 0 
+description ''
+
+script 74 50 {
+whenStarted
+'遥控器初始化'
+forever {
+  '遥控器接收（放重复执行里面）'
+  if ('遥控器按键' 'K01') {
+    '前进' 50 false
+  } ('遥控器按键' 'K01') {
+    '前进' 50 false
+  } ('遥控器按键' 'K01') {
+    '前进' 50 false
+  } ('遥控器按键' 'K01') {
+    '前进' 50 false
+  } ('遥控器按键' 'b00') {
+    '刹车'
+  }
+}
+}
+
+
+module Tone Output
+author MicroBlocks
+version 1 8 
+tags tone sound music audio note speaker 
+choices tone_NoteName c 'c#' d 'd#' e f 'f#' g 'g#' a 'a#' b 
+description 'Audio tone generation. Make music with MicroBlocks!'
+variables _tonePin _toneInitalized _toneLoopOverhead _toneNoteNames _toneArezzoNotes _toneFrequencies 
+
+  spec ' ' 'play tone' 'play note _ octave _ for _ ms' 'str.tone_NoteName num num' 'c' 0 500
+  spec ' ' 'playMIDIKey' 'play midi key _ for _ ms' 'num num' 60 500
+  spec ' ' 'play frequency' 'play frequency _ for _ ms' 'num num' 261 500
+  space
+  spec ' ' 'startTone' 'start tone _ Hz' 'num' 440
+  spec ' ' 'stopTone' 'stop tone'
+  space
+  spec ' ' 'attach buzzer to pin' 'attach buzzer to pin _' 'auto' ''
+  space
+  spec 'r' '_measureLoopOverhead' '_measureLoopOverhead'
+  spec 'r' '_baseFreqForNote' '_baseFreqForNote _' 'auto' 'c'
+  spec 'r' '_baseFreqForSemitone' '_baseFreqForSemitone _' 'num' 0
+  spec ' ' '_toneLoop' '_toneLoop _ for _ ms' 'num num' 440000 100
+  spec 'r' '_trimmedLowercase' '_trimmedLowercase _' 'str' 'A. b C...'
+
+to '_baseFreqForNote' note {
+  comment 'Return the frequency for the given note in the middle-C octave
+scaled by 1000. For example, return 440000 (440Hz) for A.
+Note names may be upper or lower case. Note names
+may be followed by # for a sharp or b for a flat.'
+  local 'normalized note' ('_trimmedLowercase' note)
+  if (_toneNoteNames == 0) {
+    _toneNoteNames = ('[data:makeList]' 'c' 'c#' 'd' 'd#' 'e' 'f' 'f#' 'g' 'g#' 'a' 'a#' 'b' 'c_' 'db' 'd_' 'eb' 'e_' 'e#' 'f_' 'gb' 'g_' 'ab' 'a_' 'bb' 'b_' 'b#')
+    _toneArezzoNotes = ('[data:makeList]' 'do' 'do#' 're' 're#' 'mi' 'fa' 'fa#' 'sol' 'sol#' 'la' 'la#' 'si' 'do_' 'dob' 're_' 'reb' 'mi_' 'mi#' 'fa_' 'solb' 'sol_' 'lab' 'la_' 'sib' 'si_' 'si#')
+  }
+  if (('[data:find]' (v 'normalized note') _toneArezzoNotes) > 0) {
+    return ('_baseFreqForSemitone' ('[data:find]' (v 'normalized note') _toneArezzoNotes))
+  } else {
+    return ('_baseFreqForSemitone' ('[data:find]' (v 'normalized note') _toneNoteNames))
+  }
+}
+
+to '_baseFreqForSemitone' semitone {
+  if (_toneFrequencies == 0) {_toneFrequencies = ('[data:makeList]' 261626 277183 293665 311127 329628 349228 369994 391995 415305 440000 466164 493883 246942 277183 277183 311127 311127 349228 329628 369994 369994 415305 415305 466164 466164 523252)}
+  if (and (1 <= semitone) (semitone <= (size _toneFrequencies))) {
+    return (at semitone _toneFrequencies)
+  } else {
+    comment 'Bad note name; return 10 Hz'
+    return 10000
+  }
+}
+
+to '_measureLoopOverhead' {
+  comment 'Measure the loop overhead on this device'
+  local 'halfCycle' 100
+  local 'startT' (microsOp)
+  repeat 100 {
+    digitalWriteOp _tonePin false
+    waitMicros halfCycle
+    digitalWriteOp _tonePin false
+    waitMicros halfCycle
+  }
+  local 'usecs' ((microsOp) - startT)
+  return ((usecs - 20000) / 200)
+}
+
+to '_toneLoop' scaledFreq ms {
+  if (_toneInitalized == 0) {'attach buzzer to pin' ''}
+  if ('[io:hasTone]') {
+    '[io:playTone]' _tonePin (scaledFreq / 1000)
+    waitMillis ms
+    '[io:playTone]' _tonePin 0
+  } else {
+    local 'halfCycle' ((500000000 / scaledFreq) - _toneLoopOverhead)
+    local 'cycles' ((ms * 500) / halfCycle)
+    repeat cycles {
+      digitalWriteOp _tonePin true
+      waitMicros halfCycle
+      digitalWriteOp _tonePin false
+      waitMicros halfCycle
+    }
+  }
+}
+
+to '_trimmedLowercase' s {
+  comment 'Return a copy of the given string without whitespace
+or periods and all lowercase.'
+  local 'result' (newList (size s))
+  '[data:delete]' 'all' result
+  for i (size s) {
+    local 'ch' ('[data:unicodeAt]' i s)
+    if (and (ch > 32) (ch != 46)) {
+      if (and (65 <= ch) (ch <= 90)) {ch = (ch + 32)}
+      '[data:addLast]' ch result
+    }
+  }
+  return ('[data:unicodeString]' result)
+}
+
+to 'attach buzzer to pin' pinNumber {
+  if (pinNumber == '') {
+    comment 'Pin number not specified; use default pin for this device'
+    if ((boardType) == 'Citilab ED1') {
+      _tonePin = 26
+    } ((boardType) == 'M5Stack-Core') {
+      _tonePin = 25
+    } ((boardType) == 'M5StickC') {
+      _tonePin = 26
+    } ((boardType) == 'Calliope') {
+      digitalWriteOp 23 true
+      digitalWriteOp 24 true
+      _tonePin = 25
+    } ((boardType) == 'D1-Mini') {
+      _tonePin = 12
+    } else {
+      _tonePin = -1
+    }
+  } else {
+    _tonePin = pinNumber
+  }
+  _toneLoopOverhead = ('_measureLoopOverhead')
+  _toneInitalized = (booleanConstant true)
+}
+
+to 'play frequency' freq ms {
+  '_toneLoop' (freq * 1000) ms
+}
+
+to 'play tone' note octave ms {
+  local 'freq' ('_baseFreqForNote' note)
+  if (freq <= 10000) {
+    waitMillis ms
+    return 0
+  }
+  if (octave < 0) {
+    repeat (absoluteValue octave) {
+      freq = (freq / 2)
+    }
+  }
+  repeat octave {
+    freq = (freq * 2)
+  }
+  '_toneLoop' freq ms
+}
+
+to playMIDIKey key ms {
+  local 'freq' ('_baseFreqForSemitone' ((key % 12) + 1))
+  local 'octave' ((key / 12) - 5)
+  if (octave < 0) {
+    repeat (absoluteValue octave) {
+      freq = (freq / 2)
+    }
+  }
+  repeat octave {
+    freq = (freq * 2)
+  }
+  '_toneLoop' freq ms
+}
+
+to startTone freq {
+  if (_toneInitalized == 0) {'attach buzzer to pin' ''}
+  if ('[io:hasTone]') {'[io:playTone]' _tonePin freq}
+}
+
+to stopTone {
+  startTone 0
+}
+
+
+module '瓦欧2040_V2'
+author maikemaker
+version 2 3 
+depends Tone 
+choices AnalogINxMenu IN1 IN2 IN3 
+choices OUTxMenu OUT1 OUT2 OUT3 OUT4 OUT5 OUT6 
+choices MotorMenu M1 M2 M3 M4 
+choices INxMenu IN1 IN2 IN3 IN4 IN5 IN6 
+choices YKQxMenu K01 K02 K03 K04 K05 K06 K12 K13 K14 K15 K16 K23 K24 K25 b00 
+description '瓦欧创客图形化机器人控制板专用库
+20231102添加触碰声音红外蜂鸣器，
+电机舵机模拟输入LED灯
+20231102修复变量错误引用，按键错误,修改舵机映射范围，蜂鸣器控制电平
+20231102晚上18:04增加遥控器（串口）
+20240322增加马达反向开关
+20240322增加两驱车
+
+'
+variables bar _servoPin _servoPulseWidth msg buffer 
+
+  spec 'r' '_数字传感器' '_数字传感器 _' 'auto' '10'
+  spec 'r' '按键' '按键 _ 按下 _ ？' 'menu.INxMenu bool' 'IN1' true
+  spec 'r' '声音传感器连接到' '声音传感器连接到 _ 有声音 _ ?' 'menu.INxMenu bool' 'IN1' true
+  spec 'r' '红外传感器连接到' '红外传感器连接到 _ 有感应 _ ?' 'menu.INxMenu bool' 'IN1' true
+  spec 'r' '火焰传感器连接到' '火焰传感器连接到 _ 有火焰 _ ?' 'menu.INxMenu bool' 'IN1' true
+  spec 'r' '模拟传感器连接到' '模拟传感器连接到 _ 读取到数值' 'menu.AnalogINxMenu' 'IN1'
+  space
+  spec ' ' 'LED灯连接到' 'LED灯连接到 _  _' 'menu.OUTxMenu bool' 'OUT1' true
+  spec ' ' 'LED灯连接到2' 'LED灯连接到 _ 亮度 _ (0-100)' 'menu.OUTxMenu num' 'OUT1' 50
+  spec ' ' '有源蜂鸣器连接到' '有源蜂鸣器连接到 _ 响？ _' 'menu.OUTxMenu bool' 'OUT1' true
+  spec ' ' '无源蜂鸣器' '无源蜂鸣器连接到 _ 初始化' 'menu.OUTxMenu' 'OUT1'
+  space
+  spec ' ' '_waoo2040_set_motor_speed' '_waoo2040_set_motor_speed pin1 _ pin2 _ speed _' 'auto auto auto' 1 1 1
+  spec ' ' 'waoo2040_set_motor_speed' '设置电机 _ 速度为 _ (-100~100) 反向 _' 'menu.MotorMenu num bool' 'M1' 50 false
+  spec ' ' 'WaOO2040 stop motor' '电机 _ 刹车' 'menu.MotorMenu' 'M1'
+  spec ' ' '瓦欧 电机待机' '电机 _ 待机' 'menu.MotorMenu' 'M1'
+  spec ' ' '瓦欧2040 所有电机待机' '所有电机待机'
+  spec ' ' 'waoo2040_stop_all_motors' '所有电机刹车'
+  spec ' ' '_servoPulse' '_servoPulse pin _ usecs _' 'num num' 1 1500
+  spec ' ' '_servoUpdateLoop' '_servoUpdateLoop'
+  spec 'r' '_servoIndex' '_servoIndex _' 'num' 1
+  spec ' ' 'setServoAngle' '设置舵机 _ 的角度为 _ 度 (0 到 180)' 'menu.OUTxMenu num' 'OUT1' 90
+  spec ' ' 'setServoSpeed' '设置360度舵机 _ 的速度为 _ (-100 到 100)' 'menu.OUTxMenu num' 'OUT1' 100
+  spec ' ' 'stopServo' '停止舵机 _' 'menu.OUTxMenu' 'OUT1'
+  space
+  spec ' ' '遥控器初始化' '遥控器初始化'
+  spec ' ' '遥控器接收（放重复执行里面）' '遥控器接收（放重复执行里面）'
+  spec 'r' '遥控器按键' '遥控器按键 _ 按下' 'menu.YKQxMenu' 'K01'
+  spec ' ' '两驱车' '两驱车'
+  spec ' ' '前进' '前进 速度 _ 反向 _' 'auto bool' 50 false
+  spec ' ' '后退' '后退 速度 _ 反向 _' 'auto bool' 50 false
+  spec ' ' '大左转' '大左转 速度 _ 反向 _' 'auto bool' 50 false
+  spec ' ' '大右转' '大右转 速度 _ 反向 _' 'auto bool' 50 false
+  spec ' ' '小左转' '小左转 速度 _ 反向 _' 'auto bool' 50 false
+  spec ' ' '小左转2' '小右转 速度 _ 反向 _' 'auto bool' 50 false
+  spec ' ' '刹车' '刹停'
+
+to 'LED灯连接到' OUTx foo {
+  if (OUTx == 'OUT1') {
+    OUTx = 12
+  } (OUTx == 'OUT2') {
+    OUTx = 13
+  } (OUTx == 'OUT3') {
+    OUTx = 14
+  } (OUTx == 'OUT4') {
+    OUTx = 15
+  } (OUTx == 'OUT5') {
+    OUTx = 20
+  } else {
+    if (OUTx == 'OUT6') {OUTx = 19}
+  }
+  digitalWriteOp OUTx foo
+}
+
+to 'LED灯连接到2' OUTx bar {
+  if (OUTx == 'OUT1') {
+    OUTx = 12
+  } (OUTx == 'OUT2') {
+    OUTx = 13
+  } (OUTx == 'OUT3') {
+    OUTx = 14
+  } (OUTx == 'OUT4') {
+    OUTx = 15
+  } (OUTx == 'OUT5') {
+    OUTx = 20
+  } else {
+    if (3 == 'OUT6') {OUTx = 19}
+  }
+  analogWriteOp OUTx ('[misc:rescale]' bar 0 100 0 1023)
+}
+
+to 'WaOO2040 stop motor' motor {
+  if ('M1' == motor) {
+    '_waoo2040_set_motor_speed' 8 9 0
+  } ('M2' == motor) {
+    '_waoo2040_set_motor_speed' 11 10 0
+  } ('M3' == motor) {
+    '_waoo2040_set_motor_speed' 2 3 0
+  } ('M4' == motor) {
+    '_waoo2040_set_motor_speed' 7 6 0
+  }
+}
+
+to '_servoIndex' which {
+  if (_servoPin == 0) {
+    _servoPin = ('[data:makeList]')
+    _servoPulseWidth = ('[data:makeList]')
+    sendBroadcast '_servoUpdateLoop'
+  }
+  local 'i' ('[data:find]' which _servoPin)
+  if (i < 0) {
+    comment 'Add new pin'
+    '[data:addLast]' which _servoPin
+    '[data:addLast]' '1500' _servoPulseWidth
+    i = (size _servoPin)
+  }
+  return i
+}
+
+to '_servoPulse' pin usecs {
+  if (usecs == 0) {
+    comment 'Servo stopped; do nothing'
+    return 0
+  }
+  usecs = (maximum 850 (minimum usecs 2150))
+  comment 'Split wait into a long wait followed by a wait of <= 30 usecs for greater accuracy'
+  local 'endTime' ((microsOp) + usecs)
+  digitalWriteOp pin true
+  waitMicros (usecs - 30)
+  waitMicros (endTime - (microsOp))
+  digitalWriteOp pin false
+}
+
+to '_servoUpdateLoop' {
+  forever {
+    if (_servoPin != 0) {
+      comment 'If the _servoPin list is not 0, update the servos'
+      for i (size _servoPin) {
+        local 'pin' (at i _servoPin)
+        local 'usecs' (at i _servoPulseWidth)
+        if (and (pin >= 0) (usecs != 0)) {
+          '_servoPulse' pin usecs
+        }
+      }
+      waitMillis 15
+    }
+  }
+}
+
+to '_waoo2040_set_motor_speed' pin1 pin2 speed {
+  if (speed < 0) {
+    analogWriteOp pin1 ('[misc:rescale]' (absoluteValue speed) 0 100 1023 0)
+    analogWriteOp pin2 1023
+  } else {
+    analogWriteOp pin2 ('[misc:rescale]' speed 0 100 1023 0)
+    analogWriteOp pin1 1023
+  }
+}
+
+to '_数字传感器' foo {
+  if (foo == 'IN1') {return (digitalReadOp 28)}
+  if (foo == 'IN2') {return (digitalReadOp 27)}
+  if (foo == 'IN3') {return (digitalReadOp 26)}
+  if (foo == 'IN4') {return (digitalReadOp 18)}
+  if (foo == 'IN5') {return (digitalReadOp 17)}
+  if (foo == 'IN6') {return (digitalReadOp 16)}
+}
+
+to setServoAngle which degrees {
+  degrees = ('[misc:rescale]' degrees 0 180 90 -90)
+  if (which == 'OUT1') {
+    which = 12
+  } (which == 'OUT2') {
+    which = 13
+  } (which == 'OUT3') {
+    which = 14
+  } (which == 'OUT4') {
+    which = 15
+  } (which == 'OUT5') {
+    which = 20
+  } else {
+    if (which == 'OUT6') {which = 19}
+  }
+  local 'reversed' false
+  if ((pushArgCount) > 2) {
+    reversed = optionalReverse
+  }
+  if reversed {
+    degrees = (0 - degrees)
+  }
+  local 'pulseWidth' (1500 - (10 * degrees))
+  if ('[io:hasServo]') {
+    '[io:setServo]' which pulseWidth
+  } else {
+    atPut ('_servoIndex' which) _servoPulseWidth pulseWidth
+  }
+}
+
+to setServoSpeed which speed {
+  if (which == 'OUT1') {
+    which = 12
+  } (which == 'OUT2') {
+    which = 13
+  } (which == 'OUT3') {
+    which = 14
+  } (which == 'OUT4') {
+    which = 15
+  } (which == 'OUT5') {
+    which = 20
+  } else {
+    if (which == 'OUT6') {which = 19}
+  }
+  local 'reversed' false
+  if ((pushArgCount) > 2) {
+    reversed = optionalReverse
+  }
+  if reversed {
+    speed = (0 - speed)
+  }
+  local 'pulseWidth' (1500 - (10 * speed))
+  if ((absoluteValue speed) < 2) {
+    pulseWidth = 0
+  }
+  if ('[io:hasServo]') {
+    '[io:setServo]' which pulseWidth
+  } else {
+    atPut ('_servoIndex' which) _servoPulseWidth pulseWidth
+  }
+}
+
+to stopServo which {
+  if (which == 'OUT1') {
+    which = 12
+  } (which == 'OUT2') {
+    which = 13
+  } (which == 'OUT3') {
+    which = 14
+  } (which == 'OUT4') {
+    which = 15
+  } (which == 'OUT5') {
+    which = 20
+  } else {
+    if (which == 'OUT6') {which = 19}
+  }
+  if ('[io:hasServo]') {
+    '[io:setServo]' which 0
+  } else {
+    atPut ('_servoIndex' which) _servoPulseWidth 0
+  }
+}
+
+to waoo2040_set_motor_speed motor speed foo {
+  if foo {speed = (speed * -1)}
+  if ('M1' == motor) {
+    '_waoo2040_set_motor_speed' 9 8 speed
+  } ('M2' == motor) {
+    '_waoo2040_set_motor_speed' 10 11 speed
+  } ('M3' == motor) {
+    '_waoo2040_set_motor_speed' 3 2 speed
+  } ('M4' == motor) {
+    '_waoo2040_set_motor_speed' 6 7 speed
+  }
+}
+
+to waoo2040_stop_all_motors {
+  waoo2040_set_motor_speed 'M1' 0
+  waoo2040_set_motor_speed 'M2' 0
+  waoo2040_set_motor_speed 'M3' 0
+  waoo2040_set_motor_speed 'M4' 0
+}
+
+to '两驱车' {
+  sayIt '两驱车'
+}
+
+to '刹车' {
+  waoo2040_set_motor_speed 'M1' 0 false
+  waoo2040_set_motor_speed 'M2' 0 false
+}
+
+to '前进' foo bar {
+  waoo2040_set_motor_speed 'M1' foo bar
+  waoo2040_set_motor_speed 'M2' foo bar
+}
+
+to '后退' foo bar {
+  waoo2040_set_motor_speed 'M1' foo bar
+  waoo2040_set_motor_speed 'M2' foo bar
+}
+
+to '声音传感器连接到' INx foo {
+  if foo {
+    return (not ('_数字传感器' INx))
+  } else {
+    return ('_数字传感器' INx)
+  }
+}
+
+to '大右转' foo bar {
+  waoo2040_set_motor_speed 'M1' foo bar
+  waoo2040_set_motor_speed 'M2' 0 bar
+}
+
+to '大左转' foo bar {
+  waoo2040_set_motor_speed 'M1' 0 bar
+  waoo2040_set_motor_speed 'M2' foo bar
+}
+
+to '小左转' foo bar {
+  waoo2040_set_motor_speed 'M1' (foo * -1) bar
+  waoo2040_set_motor_speed 'M2' foo bar
+}
+
+to '小左转2' foo bar {
+  waoo2040_set_motor_speed 'M1' foo bar
+  waoo2040_set_motor_speed 'M2' (foo * -1) bar
+}
+
+to '按键' INx foo {
+  if foo {
+    return (not ('_数字传感器' INx))
+  } else {
+    return ('_数字传感器' INx)
+  }
+}
+
+to '无源蜂鸣器' OUTx {
+  if (OUTx == 'OUT1') {
+    OUTx = 12
+  } (OUTx == 'OUT2') {
+    OUTx = 13
+  } (OUTx == 'OUT3') {
+    OUTx = 14
+  } (OUTx == 'OUT4') {
+    OUTx = 15
+  } (OUTx == 'OUT5') {
+    OUTx = 20
+  } else {
+    if (OUTx == 'OUT6') {OUTx = 19}
+  }
+  'attach buzzer to pin' OUTx
+}
+
+to '有源蜂鸣器连接到' OUTx foo {
+  if (OUTx == 'OUT1') {
+    OUTx = 12
+  } (OUTx == 'OUT2') {
+    OUTx = 13
+  } (OUTx == 'OUT3') {
+    OUTx = 14
+  } (OUTx == 'OUT4') {
+    OUTx = 15
+  } (OUTx == 'OUT5') {
+    OUTx = 20
+  } else {
+    if (OUTx == 'OUT6') {OUTx = 19}
+  }
+  digitalWriteOp OUTx foo
+}
+
+to '模拟传感器连接到' INx {
+  if (INx == 'IN1') {
+    return (analogReadOp 28)
+  } (INx == 'IN2') {
+    return (analogReadOp 27)
+  } else {
+    if (INx == 'IN3') {return (analogReadOp 26)}
+  }
+}
+
+to '火焰传感器连接到' INx foo {
+  if foo {
+    return (not ('_数字传感器' INx))
+  } else {
+    return ('_数字传感器' INx)
+  }
+}
+
+to '瓦欧 电机待机' motor {
+  if ('M1' == motor) {
+    analogWriteOp 8 0
+    analogWriteOp 9 0
+  } ('M2' == motor) {
+    analogWriteOp 11 0
+    analogWriteOp 10 0
+  } ('M3' == motor) {
+    analogWriteOp 2 0
+    analogWriteOp 3 0
+  } ('M4' == motor) {
+    analogWriteOp 7 0
+    analogWriteOp 6 0
+  }
+}
+
+to '瓦欧2040 所有电机待机' {
+  analogWriteOp 8 0
+  analogWriteOp 9 0
+  analogWriteOp 11 0
+  analogWriteOp 10 0
+  analogWriteOp 2 0
+  analogWriteOp 3 0
+  analogWriteOp 7 0
+  analogWriteOp 6 0
+}
+
+to '红外传感器连接到' INx foo {
+  if foo {
+    return (not ('_数字传感器' INx))
+  } else {
+    return ('_数字传感器' INx)
+  }
+}
+
+to '触碰开关连接到2' INx bar {
+  if bar {
+    return (not ('_数字传感器' INx))
+  } else {
+    return ('_数字传感器' INx)
+  }
+}
+
+to '遥控器初始化' {
+  '[serial:open]' 115200
+  setUserLED true
+  msg = ''
+  buffer = ''
+}
+
+to '遥控器按键' Kx {
+  if (msg == Kx) {
+    return (booleanConstant true)
+  } else {
+    return (booleanConstant false)
+  }
+}
+
+to '遥控器接收（放重复执行里面）' {
+  buffer = ('[serial:read]')
+  if ((size buffer) > 0) {
+    local 'var' (newList (size buffer))
+    for i (size buffer) {
+      atPut i var (at i buffer)
+    }
+    sayIt ('[data:unicodeString]' var)
+    msg = ('[data:unicodeString]' var)
+  }
+  waitMillis 10
+}
+
